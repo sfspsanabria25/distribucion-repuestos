@@ -1,166 +1,213 @@
 import streamlit as st
-import pandas as pd
+import openpyxl
 from io import BytesIO
+from datetime import datetime
 
 st.set_page_config(page_title="Distribución de Repuestos", layout="wide")
+st.title("📦 Distribución de Repuestos")
 
-st.title("🔧 Distribución de Repuestos")
+
+# ---------- BOTÓN REINICIAR ----------
+
+if st.button("🔄 Reiniciar"):
+    st.session_state.clear()
+    st.rerun()
+
 
 archivo = st.file_uploader("Cargar archivo Excel", type=["xlsx"])
 
+
+def buscar_columna(encabezados, posibles):
+    for p in posibles:
+        for e in encabezados:
+            if e and p.lower() in str(e).lower():
+                return encabezados.index(e)
+    return None
+
+
 if archivo:
 
-    df = pd.read_excel(archivo)
+    wb = openpyxl.load_workbook(archivo)
+    ws = wb.active
 
-    # ===== NORMALIZAR NOMBRES DE COLUMNAS =====
-    df.columns = (
-        df.columns
-        .astype(str)
-        .str.strip()
-        .str.upper()
-    )
+    encabezados = [c.value for c in next(ws.iter_rows(min_row=1, max_row=1))]
 
-    # ===== DETECCIÓN AUTOMÁTICA DE COLUMNAS =====
+    col_caso = buscar_columna(encabezados, ["caso"])
+    col_centro = buscar_columna(encabezados, ["centro"])
+    col_fecha = 10  # Columna K
 
-    # CASO
-    posibles_caso = [c for c in df.columns if "CASO" in c]
-    if not posibles_caso:
-        st.error("No se encontró la columna de CASO")
+    if None in (col_caso, col_centro):
+        st.error("❌ Archivo no válido")
         st.stop()
 
-    col_caso = posibles_caso[0]
+    datos_originales = []
+    casos_vistos = set()
+    datos = []
 
-    # CENTRO DE SERVICIO
-    posibles_centro = [
-        c for c in df.columns
-        if "CENTRO" in c and "SERVICIO" in c
-    ]
+    casos_woden = set()
+    casos_logy = set()
 
-    if not posibles_centro:
-        st.error("No se encontró la columna de Centro de servicio")
-        st.stop()
+    # -------- ELIMINAR DUPLICADOS --------
 
-    col_centro = posibles_centro[0]
+    for fila in ws.iter_rows(min_row=2, values_only=True):
 
-    # FECHA SOLICITUD (Columna K usualmente)
-    if len(df.columns) >= 11:
-        col_fecha = df.columns[10]
+        caso = fila[col_caso]
+        centro = str(fila[col_centro]).upper() if fila[col_centro] else ""
+
+        datos_originales.append(list(fila))
+
+        if not caso or caso in casos_vistos:
+            continue
+
+        casos_vistos.add(caso)
+
+        if "WODEN" in centro:
+            casos_woden.add(caso)
+
+        if "LOGYTECH" in centro:
+            casos_logy.add(caso)
+
+        datos.append(list(fila))
+
+    total_rep_original = len(datos_originales)
+    total_casos = len(datos)
+
+    # -------- MÉTRICAS --------
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric("Casos únicos", total_casos)
+    c2.metric("Casos WODEN", len(casos_woden))
+    c3.metric("Casos LOGYTECH", len(casos_logy))
+    c4.metric("Filas originales", total_rep_original)
+
+    # -------- INPUTS --------
+
+    colA, colB = st.columns(2)
+
+    personas = colA.number_input("Número de líderes técnicos", min_value=1, step=1)
+    por_persona = colB.number_input("Casos por líder técnico", min_value=1, step=1)
+
+    total_asignar = personas * por_persona
+
+    st.write(f"📦 Total de casos a asignar: {total_asignar}")
+
+    if total_casos >= total_asignar:
+        st.success(f"Datos suficientes. Sobrantes estimados: {total_casos - total_asignar}")
     else:
-        col_fecha = df.columns[-1]
+        st.warning("Se asignarán todos los casos disponibles.")
 
-    # ===== ELIMINAR DUPLICADOS POR CASO =====
-    df = df.drop_duplicates(subset=[col_caso])
+    # -------- GENERAR SOLO UNA VEZ --------
 
-    total_casos = len(df)
-
-    # ===== PRIORIDAD =====
-    centros_prioridad = ["WODEN S.A.S.", "LOGYTECH MOBILE"]
-
-    df_prioridad = df[df[col_centro].isin(centros_prioridad)].copy()
-    df_otros = df[~df[col_centro].isin(centros_prioridad)].copy()
-
-    casos_woden = len(df[df[col_centro] == "WODEN S.A.S."])
-    casos_logy = len(df[df[col_centro] == "LOGYTECH MOBILE"])
-
-    st.info(f"Total de casos: {total_casos}")
-    st.info(f"WODEN S.A.S.: {casos_woden}")
-    st.info(f"LOGYTECH MOBILE: {casos_logy}")
-
-    # ===== PARÁMETROS =====
-    col1, col2 = st.columns(2)
-
-    with col1:
-        num_lideres = st.number_input(
-            "Número de líderes técnicos",
-            min_value=1,
-            value=2
-        )
-
-    with col2:
-        repuestos_por_lider = st.number_input(
-            "Cantidad de repuestos por líder",
-            min_value=1,
-            value=50
-        )
-
-    total_requerido = num_lideres * repuestos_por_lider
-    st.write(f"Total requerido: {total_requerido}")
-
-    # ===== GENERAR DISTRIBUCIÓN =====
     if st.button("Generar distribución"):
 
-        # PRIORIDAD COMPLETA SIEMPRE
-        asignados = df_prioridad.copy()
+        # 🔥 Orden por antigüedad (más antiguos primero)
+        datos.sort(key=lambda x: int(x[col_caso]))
 
-        restantes_cupo = total_requerido - len(asignados)
+        prioridad = []
+        normales = []
 
-        df_otros = df_otros.sort_values(by=col_caso)
+        # -------- SEPARAR PRIORIDAD --------
 
-        if restantes_cupo > 0:
-            asignados = pd.concat(
-                [asignados, df_otros.head(restantes_cupo)],
-                ignore_index=True
+        for fila in datos:
+            centro = str(fila[col_centro]).upper() if fila[col_centro] else ""
+
+            if "WODEN" in centro or "LOGYTECH" in centro:
+                prioridad.append(fila)
+            else:
+                normales.append(fila)
+
+        # 🔥 TODOS los prioritarios SIEMPRE incluidos
+        asignados = prioridad.copy()
+
+        # Completar con normales hasta el límite
+        restantes_necesarios = max(0, total_asignar - len(asignados))
+        asignados += normales[:restantes_necesarios]
+
+        # Sobrantes reales
+        sobrantes = normales[restantes_necesarios:]
+
+        # -------- DISTRIBUCIÓN ENTRE LÍDERES --------
+
+        grupos = [[] for _ in range(personas)]
+
+        for i, fila in enumerate(asignados):
+            grupos[i % personas].append(fila)
+
+        # ---------- ARCHIVO PRINCIPAL ----------
+
+        wb_out = openpyxl.Workbook()
+        wb_out.remove(wb_out.active)
+
+        for i, grupo in enumerate(grupos):
+
+            prioridad_local = []
+            resto = []
+
+            for fila in grupo:
+                centro = str(fila[col_centro]).upper() if fila[col_centro] else ""
+
+                if "WODEN" in centro or "LOGYTECH" in centro:
+                    prioridad_local.append(fila)
+                else:
+                    resto.append(fila)
+
+            # Orden antigüedad por caso
+            resto.sort(key=lambda x: int(x[col_caso]))
+
+            # Orden por fecha solicitud
+            resto_fecha = sorted(
+                resto,
+                key=lambda x: x[col_fecha]
+                if isinstance(x[col_fecha], datetime)
+                else datetime.max
             )
 
-        # ===== SOBRANTES =====
-        sobrantes = df[~df[col_caso].isin(asignados[col_caso])].copy()
-        sobrantes = sobrantes.sort_values(by=col_caso)
+            mitad = len(resto) // 2
+            organizados = prioridad_local + resto[:mitad] + resto_fecha[:mitad]
 
-        # ===== ALEATORIZAR =====
-        asignados = asignados.sample(frac=1).reset_index(drop=True)
+            ws_out = wb_out.create_sheet(f"Tec_lid{i+1}")
+            ws_out.append(encabezados)
 
-        # ===== DISTRIBUCIÓN ENTRE LÍDERES =====
-        distribucion = []
-        inicio = 0
+            for fila in organizados:
+                ws_out.append(fila)
 
-        for i in range(num_lideres):
-            fin = inicio + repuestos_por_lider
-            distribucion.append(asignados.iloc[inicio:fin].copy())
-            inicio = fin
+        buffer1 = BytesIO()
+        wb_out.save(buffer1)
 
-        # ===== ORGANIZACIÓN INTERNA =====
-        hojas_finales = []
+        # ---------- SOBRANTES ----------
 
-        for df_lider in distribucion:
+        wb_rest = openpyxl.Workbook()
+        ws_rest = wb_rest.active
+        ws_rest.title = "Repuestos no asignados"
+        ws_rest.append(encabezados)
 
-            prioridad = df_lider[df_lider[col_centro].isin(centros_prioridad)]
-            otros = df_lider[~df_lider[col_centro].isin(centros_prioridad)]
+        sobrantes.sort(key=lambda x: int(x[col_caso]))
 
-            mitad = len(otros) // 2
+        for fila in sobrantes:
+            ws_rest.append(fila)
 
-            por_caso = otros.sort_values(by=col_caso).head(mitad)
-            por_fecha = otros.sort_values(by=col_fecha).iloc[mitad:]
-
-            hoja = pd.concat([prioridad, por_caso, por_fecha])
-            hojas_finales.append(hoja)
-
-        # ===== EXCEL DISTRIBUCIÓN =====
-        buffer = BytesIO()
-
-        with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-
-            for i, hoja in enumerate(hojas_finales, start=1):
-                hoja.to_excel(writer, sheet_name=f"Tec_lid{i}", index=False)
-
-        st.download_button(
-            label="Descargar distribución",
-            data=buffer.getvalue(),
-            file_name="distribucion_repuestos.xlsx"
-        )
-
-        # ===== EXCEL SOBRANTES =====
         buffer2 = BytesIO()
+        wb_rest.save(buffer2)
 
-        with pd.ExcelWriter(buffer2, engine="xlsxwriter") as writer:
-            sobrantes.to_excel(writer, index=False)
+        # 🔒 GUARDAR EN MEMORIA
+        st.session_state["dist"] = buffer1.getvalue()
+        st.session_state["sobrantes"] = buffer2.getvalue()
+
+    # -------- MOSTRAR SI YA EXISTEN --------
+
+    if "dist" in st.session_state:
+
+        st.success("Distribución generada ✅")
 
         st.download_button(
-            label="Descargar repuestos no asignados",
-            data=buffer2.getvalue(),
-            file_name="repuestos_no_asignados.xlsx"
+            "⬇️ Descargar distribución",
+            data=st.session_state["dist"],
+            file_name="Distribucion_Casos.xlsx"
         )
 
-        st.success("Distribución generada correctamente")
-
-    if st.button("Reiniciar"):
-        st.rerun()
+        st.download_button(
+            "⬇️ Descargar repuestos no asignados",
+            data=st.session_state["sobrantes"],
+            file_name="Repuestos_No_Asignados.xlsx"
+        )
