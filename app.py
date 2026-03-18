@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import random
 from io import BytesIO
 
 st.set_page_config(page_title="Distribución de Repuestos", layout="wide")
@@ -13,12 +12,41 @@ if archivo:
 
     df = pd.read_excel(archivo)
 
-    # ===== LIMPIEZA DE COLUMNAS =====
-    df.columns = [str(c).strip().upper() for c in df.columns]
+    # ===== NORMALIZAR NOMBRES DE COLUMNAS =====
+    df.columns = (
+        df.columns
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
 
-    col_caso = "CASO"
-    col_centro = "CENTRO DE SERVICIO SOLICITANTE"
-    col_fecha = df.columns[10]  # Columna K
+    # ===== DETECCIÓN AUTOMÁTICA DE COLUMNAS =====
+
+    # CASO
+    posibles_caso = [c for c in df.columns if "CASO" in c]
+    if not posibles_caso:
+        st.error("No se encontró la columna de CASO")
+        st.stop()
+
+    col_caso = posibles_caso[0]
+
+    # CENTRO DE SERVICIO
+    posibles_centro = [
+        c for c in df.columns
+        if "CENTRO" in c and "SERVICIO" in c
+    ]
+
+    if not posibles_centro:
+        st.error("No se encontró la columna de Centro de servicio")
+        st.stop()
+
+    col_centro = posibles_centro[0]
+
+    # FECHA SOLICITUD (Columna K usualmente)
+    if len(df.columns) >= 11:
+        col_fecha = df.columns[10]
+    else:
+        col_fecha = df.columns[-1]
 
     # ===== ELIMINAR DUPLICADOS POR CASO =====
     df = df.drop_duplicates(subset=[col_caso])
@@ -56,18 +84,16 @@ if archivo:
         )
 
     total_requerido = num_lideres * repuestos_por_lider
-
     st.write(f"Total requerido: {total_requerido}")
 
-    # ===== BOTÓN GENERAR =====
+    # ===== GENERAR DISTRIBUCIÓN =====
     if st.button("Generar distribución"):
 
-        # === PRIORIDAD SIEMPRE COMPLETA ===
+        # PRIORIDAD COMPLETA SIEMPRE
         asignados = df_prioridad.copy()
 
         restantes_cupo = total_requerido - len(asignados)
 
-        # === ORDENAR OTROS POR ANTIGÜEDAD DE CASO ===
         df_otros = df_otros.sort_values(by=col_caso)
 
         if restantes_cupo > 0:
@@ -80,8 +106,8 @@ if archivo:
         sobrantes = df[~df[col_caso].isin(asignados[col_caso])].copy()
         sobrantes = sobrantes.sort_values(by=col_caso)
 
-        # ===== MEZCLA ALEATORIA CON PRIORIDAD =====
-        asignados = asignados.sample(frac=1, random_state=42).reset_index(drop=True)
+        # ===== ALEATORIZAR =====
+        asignados = asignados.sample(frac=1).reset_index(drop=True)
 
         # ===== DISTRIBUCIÓN ENTRE LÍDERES =====
         distribucion = []
@@ -106,20 +132,15 @@ if archivo:
             por_fecha = otros.sort_values(by=col_fecha).iloc[mitad:]
 
             hoja = pd.concat([prioridad, por_caso, por_fecha])
-
             hojas_finales.append(hoja)
 
-        # ===== GENERAR EXCEL =====
+        # ===== EXCEL DISTRIBUCIÓN =====
         buffer = BytesIO()
 
         with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
 
             for i, hoja in enumerate(hojas_finales, start=1):
-                hoja.to_excel(
-                    writer,
-                    sheet_name=f"Tec_lid{i}",
-                    index=False
-                )
+                hoja.to_excel(writer, sheet_name=f"Tec_lid{i}", index=False)
 
         st.download_button(
             label="Descargar distribución",
@@ -141,6 +162,5 @@ if archivo:
 
         st.success("Distribución generada correctamente")
 
-    # ===== REINICIO =====
     if st.button("Reiniciar"):
-        st.experimental_rerun()
+        st.rerun()
