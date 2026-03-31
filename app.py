@@ -25,6 +25,17 @@ def buscar_columna(encabezados, posibles):
     return None
 
 
+# 🔥 FUNCIÓN PARA CONVERTIR FECHAS CORRECTAMENTE
+def convertir_fecha(valor):
+    if isinstance(valor, datetime):
+        return valor
+    try:
+        texto = str(valor).split(",")[0].strip()
+        return datetime.strptime(texto, "%d/%m/%Y")
+    except:
+        return datetime.max
+
+
 if archivo:
 
     wb = openpyxl.load_workbook(archivo)
@@ -101,14 +112,13 @@ if archivo:
 
     if st.button("Generar distribución"):
 
-        # 🔥 Orden por antigüedad (más antiguos primero)
+        # Orden por antigüedad
         datos.sort(key=lambda x: int(x[col_caso]))
 
         prioridad = []
         normales = []
 
-        # -------- SEPARAR PRIORIDAD --------
-
+        # Separar prioridad
         for fila in datos:
             centro = str(fila[col_centro]).upper() if fila[col_centro] else ""
 
@@ -117,17 +127,16 @@ if archivo:
             else:
                 normales.append(fila)
 
-        # -------- DISTRIBUCIÓN ENTRE LÍDERES --------
+        # -------- DISTRIBUCIÓN --------
 
         grupos = [[] for _ in range(personas)]
 
-        # 🥇 PRIMERO: distribuir TODOS los prioritarios
+        # Prioridad primero
         for i, fila in enumerate(prioridad):
             grupos[i % personas].append(fila)
 
-        # 🥈 SEGUNDO: completar con normales respetando límite
+        # Completar con normales
         indice = 0
-
         for fila in normales:
 
             intentos = 0
@@ -141,8 +150,7 @@ if archivo:
             grupos[indice % personas].append(fila)
             indice += 1
 
-        # -------- SOBRANTES --------
-
+        # Sobrantes
         asignados_reales = [fila for grupo in grupos for fila in grupo]
         sobrantes = [f for f in datos if f not in asignados_reales]
 
@@ -164,27 +172,21 @@ if archivo:
                 else:
                     resto.append(fila)
 
-            # -------- ORGANIZACIÓN CORRECTA --------
+            # -------- ORGANIZACIÓN --------
 
-            # Ordenar por antigüedad de caso
-            resto_ordenado_caso = sorted(
-                resto,
-                key=lambda x: int(x[col_caso])
-            )
+            resto_ordenado = sorted(resto, key=lambda x: int(x[col_caso]))
 
-            mitad = len(resto_ordenado_caso) // 2
+            mitad = len(resto_ordenado) // 2
 
             # Primera mitad → por caso
-            primera_mitad = resto_ordenado_caso[:mitad]
+            primera_mitad = resto_ordenado[:mitad]
 
-            # Segunda mitad → restante por fecha
-            segunda_mitad_base = resto_ordenado_caso[mitad:]
+            # Segunda mitad → por fecha
+            segunda_mitad_base = resto_ordenado[mitad:]
 
             segunda_mitad = sorted(
                 segunda_mitad_base,
-                key=lambda x: x[col_fecha]
-                if isinstance(x[col_fecha], datetime)
-                else datetime.max
+                key=lambda x: convertir_fecha(x[col_fecha])
             )
 
             organizados = prioridad_local + primera_mitad + segunda_mitad
@@ -213,11 +215,11 @@ if archivo:
         buffer2 = BytesIO()
         wb_rest.save(buffer2)
 
-        # 🔒 GUARDAR EN MEMORIA
+        # Guardar en memoria
         st.session_state["dist"] = buffer1.getvalue()
         st.session_state["sobrantes"] = buffer2.getvalue()
 
-    # -------- MOSTRAR SI YA EXISTEN --------
+    # -------- DESCARGA --------
 
     if "dist" in st.session_state:
 
