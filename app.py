@@ -117,22 +117,34 @@ if archivo:
             else:
                 normales.append(fila)
 
-        # 🔥 TODOS los prioritarios SIEMPRE incluidos
-        asignados = prioridad.copy()
-
-        # Completar con normales hasta el límite
-        restantes_necesarios = max(0, total_asignar - len(asignados))
-        asignados += normales[:restantes_necesarios]
-
-        # Sobrantes reales
-        sobrantes = normales[restantes_necesarios:]
-
         # -------- DISTRIBUCIÓN ENTRE LÍDERES --------
 
         grupos = [[] for _ in range(personas)]
 
-        for i, fila in enumerate(asignados):
+        # 🥇 PRIMERO: distribuir TODOS los prioritarios
+        for i, fila in enumerate(prioridad):
             grupos[i % personas].append(fila)
+
+        # 🥈 SEGUNDO: completar con normales respetando límite
+        indice = 0
+
+        for fila in normales:
+
+            intentos = 0
+            while len(grupos[indice % personas]) >= por_persona and intentos < personas:
+                indice += 1
+                intentos += 1
+
+            if intentos >= personas:
+                break
+
+            grupos[indice % personas].append(fila)
+            indice += 1
+
+        # -------- SOBRANTES --------
+
+        asignados_reales = [fila for grupo in grupos for fila in grupo]
+        sobrantes = [f for f in datos if f not in asignados_reales]
 
         # ---------- ARCHIVO PRINCIPAL ----------
 
@@ -152,19 +164,30 @@ if archivo:
                 else:
                     resto.append(fila)
 
-            # Orden antigüedad por caso
-            resto.sort(key=lambda x: int(x[col_caso]))
+            # -------- ORGANIZACIÓN CORRECTA --------
 
-            # Orden por fecha solicitud
-            resto_fecha = sorted(
+            # Ordenar por antigüedad de caso
+            resto_ordenado_caso = sorted(
                 resto,
+                key=lambda x: int(x[col_caso])
+            )
+
+            mitad = len(resto_ordenado_caso) // 2
+
+            # Primera mitad → por caso
+            primera_mitad = resto_ordenado_caso[:mitad]
+
+            # Segunda mitad → restante por fecha
+            segunda_mitad_base = resto_ordenado_caso[mitad:]
+
+            segunda_mitad = sorted(
+                segunda_mitad_base,
                 key=lambda x: x[col_fecha]
                 if isinstance(x[col_fecha], datetime)
                 else datetime.max
             )
 
-            mitad = len(resto) // 2
-            organizados = prioridad_local + resto[:mitad] + resto_fecha[:mitad]
+            organizados = prioridad_local + primera_mitad + segunda_mitad
 
             ws_out = wb_out.create_sheet(f"Tec_lid{i+1}")
             ws_out.append(encabezados)
