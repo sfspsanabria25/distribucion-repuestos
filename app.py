@@ -6,15 +6,12 @@ from datetime import datetime
 st.set_page_config(page_title="Distribución de Repuestos", layout="wide")
 st.title("📦 Distribución de Repuestos")
 
-
 # ---------- BOTÓN REINICIAR ----------
 if st.button("🔄 Reiniciar"):
     st.session_state.clear()
     st.rerun()
 
-
 archivo = st.file_uploader("Cargar archivo Excel", type=["xlsx"])
-
 
 def buscar_columna(encabezados, posibles):
     for p in posibles:
@@ -22,7 +19,6 @@ def buscar_columna(encabezados, posibles):
             if e and p.lower() in str(e).lower():
                 return encabezados.index(e)
     return None
-
 
 # ---------- CONVERTIR FECHA ----------
 def convertir_fecha(valor):
@@ -33,7 +29,6 @@ def convertir_fecha(valor):
         return datetime.strptime(texto, "%d/%m/%Y")
     except:
         return datetime.max
-
 
 if archivo:
 
@@ -99,7 +94,7 @@ if archivo:
 
     st.write(f"📦 Total de casos a asignar: {total_asignar}")
 
-    # ---------- SELECTOR DE MODO ----------
+    # ---------- SELECTOR ----------
     modo = st.selectbox(
         "Modo de organización",
         [
@@ -109,7 +104,6 @@ if archivo:
         ]
     )
 
-    # ---------- VALIDACIÓN ----------
     if total_casos >= total_asignar:
         st.success(f"Datos suficientes. Sobrantes estimados: {total_casos - total_asignar}")
     else:
@@ -118,9 +112,13 @@ if archivo:
     # ---------- GENERAR ----------
     if st.button("Generar distribución"):
 
-        # 🔥 ORDEN GLOBAL → asegurar que sobrantes sean los más recientes
-        datos.sort(key=lambda x: (int(x[col_caso]), convertir_fecha(x[col_fecha])))
+        # 🔥 SELECCIÓN SEGÚN MODO
+        if "Modo 1" in modo:
+            datos.sort(key=lambda x: int(x[col_caso]))
+        else:
+            datos.sort(key=lambda x: convertir_fecha(x[col_fecha]))
 
+        # ---------- SEPARAR PRIORIDAD ----------
         prioridad = []
         normales = []
 
@@ -139,7 +137,7 @@ if archivo:
         for i, fila in enumerate(prioridad):
             grupos[i % personas].append(fila)
 
-        # Luego normales (más antiguos primero)
+        # Completar con normales
         indice = 0
         for fila in normales:
 
@@ -175,9 +173,8 @@ if archivo:
                 else:
                     resto.append(fila)
 
-            # ---------- ORGANIZACIÓN SEGÚN MODO ----------
-
-            if modo == "Modo 1: Prioridad → Casos antiguos - Fecha de solicitud":
+            # ---------- ORGANIZACIÓN ----------
+            if "Modo 1" in modo:
 
                 resto_ordenado = sorted(resto, key=lambda x: int(x[col_caso]))
                 mitad = len(resto_ordenado) // 2
@@ -187,7 +184,7 @@ if archivo:
 
                 organizados = prioridad_local + primera + segunda
 
-            elif modo == "Modo 2: Prioridad → Fecha de solicitud - Casos antiguos":
+            elif "Modo 2" in modo:
 
                 resto_fecha = sorted(resto, key=lambda x: convertir_fecha(x[col_fecha]))
                 mitad = len(resto_fecha) // 2
@@ -197,12 +194,12 @@ if archivo:
 
                 organizados = prioridad_local + primera + segunda
 
-            elif modo == "Modo 3: Prioridad total → Fecha de solicitud":
+            elif "Modo 3" in modo:
 
                 resto_fecha = sorted(resto, key=lambda x: convertir_fecha(x[col_fecha]))
                 organizados = prioridad_local + resto_fecha
 
-            # ---------- CREAR HOJA ----------
+            # ---------- HOJA ----------
             ws_out = wb_out.create_sheet(f"Tec_lid{i+1}")
             ws_out.append(encabezados)
 
@@ -212,14 +209,16 @@ if archivo:
         buffer1 = BytesIO()
         wb_out.save(buffer1)
 
-        # ---------- SOBRANTES EXCEL ----------
+        # ---------- SOBRANTES (LOS MÁS RECIENTES) ----------
+        if "Modo 1" in modo:
+            sobrantes.sort(key=lambda x: int(x[col_caso]), reverse=True)
+        else:
+            sobrantes.sort(key=lambda x: convertir_fecha(x[col_fecha]), reverse=True)
+
         wb_rest = openpyxl.Workbook()
         ws_rest = wb_rest.active
         ws_rest.title = "Repuestos no asignados"
         ws_rest.append(encabezados)
-
-        # 🔥 más recientes → al final → orden descendente
-        sobrantes.sort(key=lambda x: int(x[col_caso]), reverse=True)
 
         for fila in sobrantes:
             ws_rest.append(fila)
