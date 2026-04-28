@@ -8,7 +8,6 @@ st.title("📦 Distribución de Repuestos")
 
 
 # ---------- BOTÓN REINICIAR ----------
-
 if st.button("🔄 Reiniciar"):
     st.session_state.clear()
     st.rerun()
@@ -25,7 +24,7 @@ def buscar_columna(encabezados, posibles):
     return None
 
 
-# 🔥 FUNCIÓN PARA CONVERTIR FECHAS CORRECTAMENTE
+# ---------- CONVERTIR FECHA ----------
 def convertir_fecha(valor):
     if isinstance(valor, datetime):
         return valor
@@ -58,8 +57,7 @@ if archivo:
     casos_woden = set()
     casos_logy = set()
 
-    # -------- ELIMINAR DUPLICADOS --------
-
+    # ---------- ELIMINAR DUPLICADOS ----------
     for fila in ws.iter_rows(min_row=2, values_only=True):
 
         caso = fila[col_caso]
@@ -83,8 +81,7 @@ if archivo:
     total_rep_original = len(datos_originales)
     total_casos = len(datos)
 
-    # -------- MÉTRICAS --------
-
+    # ---------- MÉTRICAS ----------
     c1, c2, c3, c4 = st.columns(4)
 
     c1.metric("Casos únicos", total_casos)
@@ -92,8 +89,7 @@ if archivo:
     c3.metric("Casos LOGYTECH", len(casos_logy))
     c4.metric("Filas originales", total_rep_original)
 
-    # -------- INPUTS --------
-
+    # ---------- INPUTS ----------
     colA, colB = st.columns(2)
 
     personas = colA.number_input("Número de líderes técnicos", min_value=1, step=1)
@@ -103,22 +99,31 @@ if archivo:
 
     st.write(f"📦 Total de casos a asignar: {total_asignar}")
 
+    # ---------- SELECTOR DE MODO ----------
+    modo = st.selectbox(
+        "Modo de organización",
+        [
+            "Modo 1: Prioridad → Casos antiguos - Fecha de solicitud",
+            "Modo 2: Prioridad → Fecha de solicitud - Casos antiguos",
+            "Modo 3: Prioridad total → Fecha de solicitud"
+        ]
+    )
+
+    # ---------- VALIDACIÓN ----------
     if total_casos >= total_asignar:
         st.success(f"Datos suficientes. Sobrantes estimados: {total_casos - total_asignar}")
     else:
         st.warning("Se asignarán todos los casos disponibles.")
 
-    # -------- GENERAR SOLO UNA VEZ --------
-
+    # ---------- GENERAR ----------
     if st.button("Generar distribución"):
 
-        # Orden por antigüedad
-        datos.sort(key=lambda x: int(x[col_caso]))
+        # 🔥 ORDEN GLOBAL → asegurar que sobrantes sean los más recientes
+        datos.sort(key=lambda x: (int(x[col_caso]), convertir_fecha(x[col_fecha])))
 
         prioridad = []
         normales = []
 
-        # Separar prioridad
         for fila in datos:
             centro = str(fila[col_centro]).upper() if fila[col_centro] else ""
 
@@ -127,15 +132,14 @@ if archivo:
             else:
                 normales.append(fila)
 
-        # -------- DISTRIBUCIÓN --------
-
+        # ---------- DISTRIBUCIÓN ----------
         grupos = [[] for _ in range(personas)]
 
         # Prioridad primero
         for i, fila in enumerate(prioridad):
             grupos[i % personas].append(fila)
 
-        # Completar con normales
+        # Luego normales (más antiguos primero)
         indice = 0
         for fila in normales:
 
@@ -150,12 +154,11 @@ if archivo:
             grupos[indice % personas].append(fila)
             indice += 1
 
-        # Sobrantes
+        # ---------- SOBRANTES ----------
         asignados_reales = [fila for grupo in grupos for fila in grupo]
         sobrantes = [f for f in datos if f not in asignados_reales]
 
         # ---------- ARCHIVO PRINCIPAL ----------
-
         wb_out = openpyxl.Workbook()
         wb_out.remove(wb_out.active)
 
@@ -172,25 +175,34 @@ if archivo:
                 else:
                     resto.append(fila)
 
-            # -------- ORGANIZACIÓN --------
+            # ---------- ORGANIZACIÓN SEGÚN MODO ----------
 
-            resto_ordenado = sorted(resto, key=lambda x: int(x[col_caso]))
+            if modo == "Modo 1: Prioridad → Casos antiguos - Fecha de solicitud":
 
-            mitad = len(resto_ordenado) // 2
+                resto_ordenado = sorted(resto, key=lambda x: int(x[col_caso]))
+                mitad = len(resto_ordenado) // 2
 
-            # Primera mitad → por caso
-            primera_mitad = resto_ordenado[:mitad]
+                primera = resto_ordenado[:mitad]
+                segunda = sorted(resto_ordenado[mitad:], key=lambda x: convertir_fecha(x[col_fecha]))
 
-            # Segunda mitad → por fecha
-            segunda_mitad_base = resto_ordenado[mitad:]
+                organizados = prioridad_local + primera + segunda
 
-            segunda_mitad = sorted(
-                segunda_mitad_base,
-                key=lambda x: convertir_fecha(x[col_fecha])
-            )
+            elif modo == "Modo 2: Prioridad → Fecha de solicitud - Casos antiguos":
 
-            organizados = prioridad_local + primera_mitad + segunda_mitad
+                resto_fecha = sorted(resto, key=lambda x: convertir_fecha(x[col_fecha]))
+                mitad = len(resto_fecha) // 2
 
+                primera = resto_fecha[:mitad]
+                segunda = sorted(resto_fecha[mitad:], key=lambda x: int(x[col_caso]))
+
+                organizados = prioridad_local + primera + segunda
+
+            elif modo == "Modo 3: Prioridad total → Fecha de solicitud":
+
+                resto_fecha = sorted(resto, key=lambda x: convertir_fecha(x[col_fecha]))
+                organizados = prioridad_local + resto_fecha
+
+            # ---------- CREAR HOJA ----------
             ws_out = wb_out.create_sheet(f"Tec_lid{i+1}")
             ws_out.append(encabezados)
 
@@ -200,14 +212,14 @@ if archivo:
         buffer1 = BytesIO()
         wb_out.save(buffer1)
 
-        # ---------- SOBRANTES ----------
-
+        # ---------- SOBRANTES EXCEL ----------
         wb_rest = openpyxl.Workbook()
         ws_rest = wb_rest.active
         ws_rest.title = "Repuestos no asignados"
         ws_rest.append(encabezados)
 
-        sobrantes.sort(key=lambda x: int(x[col_caso]))
+        # 🔥 más recientes → al final → orden descendente
+        sobrantes.sort(key=lambda x: int(x[col_caso]), reverse=True)
 
         for fila in sobrantes:
             ws_rest.append(fila)
@@ -219,8 +231,7 @@ if archivo:
         st.session_state["dist"] = buffer1.getvalue()
         st.session_state["sobrantes"] = buffer2.getvalue()
 
-    # -------- DESCARGA --------
-
+    # ---------- DESCARGA ----------
     if "dist" in st.session_state:
 
         st.success("Distribución generada ✅")
