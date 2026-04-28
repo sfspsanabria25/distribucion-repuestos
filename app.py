@@ -112,7 +112,7 @@ if archivo:
     # ---------- GENERAR ----------
     if st.button("Generar distribución"):
 
-        # 🔥 SELECCIÓN SEGÚN MODO
+        #  SELECCIÓN SEGÚN MODO
         if "Modo 1" in modo:
             datos.sort(key=lambda x: int(x[col_caso]))
         else:
