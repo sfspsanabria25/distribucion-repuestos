@@ -4,7 +4,7 @@ from io import BytesIO
 from datetime import datetime
 
 st.set_page_config(page_title="Distribución de Repuestos", layout="wide")
-st.title("📦 Distribución de Repuestos")
+st.title("📦 Distribución de Repuestos soporte técnico")
 
 # ---------- BOTÓN REINICIAR ----------
 if st.button("🔄 Reiniciar"):
