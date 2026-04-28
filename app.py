@@ -100,7 +100,7 @@ if archivo:
         [
             "Modo 1: Prioridad → Casos antiguos - Fecha de solicitud",
             "Modo 2: Prioridad → Fecha de solicitud - Casos antiguos",
-            "Modo 3: Prioridad total → Fecha de solicitud"
+            "Modo 3: Prioridad → Fecha de solicitud"
         ]
     )
 
