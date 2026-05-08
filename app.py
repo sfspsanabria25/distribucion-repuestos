@@ -1,7 +1,9 @@
 import streamlit as st
 import openpyxl
+import plotly.express as px
 from io import BytesIO
 from datetime import datetime
+from collections import Counter
 
 st.set_page_config(page_title="Distribución de Repuestos", layout="wide")
 st.title("📦 Distribución de Repuestos soporte técnico")
@@ -24,6 +26,7 @@ def buscar_columna(encabezados, posibles):
 def convertir_fecha(valor):
     if isinstance(valor, datetime):
         return valor
+
     try:
         texto = str(valor).split(",")[0].strip()
         return datetime.strptime(texto, "%d/%m/%Y")
@@ -104,6 +107,45 @@ if archivo:
         ]
     )
 
+    # ---------- GRÁFICA INTERACTIVA ----------
+    st.subheader("📈 Pendientes por fecha de solicitud")
+
+    fechas_validas = []
+
+    for fila in datos:
+        fecha = convertir_fecha(fila[col_fecha])
+
+        if fecha != datetime.max:
+            fechas_validas.append(fecha.strftime("%d/%m/%Y"))
+
+    conteo_fechas = Counter(fechas_validas)
+
+    fechas_ordenadas = sorted(
+        conteo_fechas.keys(),
+        key=lambda x: datetime.strptime(x, "%d/%m/%Y")
+    )
+
+    cantidades = [conteo_fechas[f] for f in fechas_ordenadas]
+
+    fig = px.line(
+        x=fechas_ordenadas,
+        y=cantidades,
+        markers=True,
+        labels={
+            "x": "Fecha de solicitud",
+            "y": "Cantidad de casos"
+        }
+    )
+
+    fig.update_layout(
+        xaxis_title="Fecha de solicitud",
+        yaxis_title="Cantidad de casos",
+        hovermode="x unified"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ---------- VALIDACIÓN ----------
     if total_casos >= total_asignar:
         st.success(f"Datos suficientes. Sobrantes estimados: {total_casos - total_asignar}")
     else:
@@ -112,7 +154,7 @@ if archivo:
     # ---------- GENERAR ----------
     if st.button("Generar distribución"):
 
-        #  SELECCIÓN SEGÚN MODO
+        # SELECCIÓN SEGÚN MODO
         if "Modo 1" in modo:
             datos.sort(key=lambda x: int(x[col_caso]))
         else:
@@ -139,9 +181,11 @@ if archivo:
 
         # Completar con normales
         indice = 0
+
         for fila in normales:
 
             intentos = 0
+
             while len(grupos[indice % personas]) >= por_persona and intentos < personas:
                 indice += 1
                 intentos += 1
@@ -177,26 +221,43 @@ if archivo:
             if "Modo 1" in modo:
 
                 resto_ordenado = sorted(resto, key=lambda x: int(x[col_caso]))
+
                 mitad = len(resto_ordenado) // 2
 
                 primera = resto_ordenado[:mitad]
-                segunda = sorted(resto_ordenado[mitad:], key=lambda x: convertir_fecha(x[col_fecha]))
+
+                segunda = sorted(
+                    resto_ordenado[mitad:],
+                    key=lambda x: convertir_fecha(x[col_fecha])
+                )
 
                 organizados = prioridad_local + primera + segunda
 
             elif "Modo 2" in modo:
 
-                resto_fecha = sorted(resto, key=lambda x: convertir_fecha(x[col_fecha]))
+                resto_fecha = sorted(
+                    resto,
+                    key=lambda x: convertir_fecha(x[col_fecha])
+                )
+
                 mitad = len(resto_fecha) // 2
 
                 primera = resto_fecha[:mitad]
-                segunda = sorted(resto_fecha[mitad:], key=lambda x: int(x[col_caso]))
+
+                segunda = sorted(
+                    resto_fecha[mitad:],
+                    key=lambda x: int(x[col_caso])
+                )
 
                 organizados = prioridad_local + primera + segunda
 
             elif "Modo 3" in modo:
 
-                resto_fecha = sorted(resto, key=lambda x: convertir_fecha(x[col_fecha]))
+                resto_fecha = sorted(
+                    resto,
+                    key=lambda x: convertir_fecha(x[col_fecha])
+                )
+
                 organizados = prioridad_local + resto_fecha
 
             # ---------- HOJA ----------
@@ -209,14 +270,21 @@ if archivo:
         buffer1 = BytesIO()
         wb_out.save(buffer1)
 
-        # ---------- SOBRANTES (LOS MÁS RECIENTES) ----------
+        # ---------- SOBRANTES ----------
         if "Modo 1" in modo:
-            sobrantes.sort(key=lambda x: int(x[col_caso]), reverse=True)
+            sobrantes.sort(
+                key=lambda x: int(x[col_caso]),
+                reverse=True
+            )
         else:
-            sobrantes.sort(key=lambda x: convertir_fecha(x[col_fecha]), reverse=True)
+            sobrantes.sort(
+                key=lambda x: convertir_fecha(x[col_fecha]),
+                reverse=True
+            )
 
         wb_rest = openpyxl.Workbook()
         ws_rest = wb_rest.active
+
         ws_rest.title = "Repuestos no asignados"
         ws_rest.append(encabezados)
 
@@ -226,11 +294,11 @@ if archivo:
         buffer2 = BytesIO()
         wb_rest.save(buffer2)
 
-        # Guardar en memoria
+        # ---------- GUARDAR ----------
         st.session_state["dist"] = buffer1.getvalue()
         st.session_state["sobrantes"] = buffer2.getvalue()
 
-    # ---------- DESCARGA ----------
+    # ---------- DESCARGAS ----------
     if "dist" in st.session_state:
 
         st.success("Distribución generada ✅")
