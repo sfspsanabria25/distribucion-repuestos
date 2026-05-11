@@ -107,43 +107,46 @@ if archivo:
         ]
     )
 
-    # ---------- GRÁFICA INTERACTIVA ----------
-    st.subheader("📈 Pendientes por fecha de solicitud")
+ 
+   # ---------- GRÁFICA INTERACTIVA ----------
+st.subheader("📈 Solicitudes de repuestos por fecha")
 
-    fechas_validas = []
+fechas_validas = []
 
-    for fila in datos:
-        fecha = convertir_fecha(fila[col_fecha])
+# USAR TODAS LAS FILAS ORIGINALES
+for fila in datos_originales:
 
-        if fecha != datetime.max:
-            fechas_validas.append(fecha.strftime("%d/%m/%Y"))
+    fecha = convertir_fecha(fila[col_fecha])
 
-    conteo_fechas = Counter(fechas_validas)
+    if fecha != datetime.max:
+        fechas_validas.append(fecha.strftime("%d/%m/%Y"))
 
-    fechas_ordenadas = sorted(
-        conteo_fechas.keys(),
-        key=lambda x: datetime.strptime(x, "%d/%m/%Y")
-    )
+conteo_fechas = Counter(fechas_validas)
 
-    cantidades = [conteo_fechas[f] for f in fechas_ordenadas]
+fechas_ordenadas = sorted(
+    conteo_fechas.keys(),
+    key=lambda x: datetime.strptime(x, "%d/%m/%Y")
+)
 
-    fig = px.line(
-        x=fechas_ordenadas,
-        y=cantidades,
-        markers=True,
-        labels={
-            "x": "Fecha de solicitud",
-            "y": "Cantidad de casos"
-        }
-    )
+cantidades = [conteo_fechas[f] for f in fechas_ordenadas]
 
-    fig.update_layout(
-        xaxis_title="Fecha de solicitud",
-        yaxis_title="Cantidad de casos",
-        hovermode="x unified"
-    )
+fig = px.line(
+    x=fechas_ordenadas,
+    y=cantidades,
+    markers=True,
+    labels={
+        "x": "Fecha de solicitud",
+        "y": "Cantidad de repuestos"
+    }
+)
 
-    st.plotly_chart(fig, use_container_width=True)
+fig.update_layout(
+    xaxis_title="Fecha de solicitud",
+    yaxis_title="Cantidad de repuestos",
+    hovermode="x unified"
+)
+
+st.plotly_chart(fig, use_container_width=True)
 
     # ---------- VALIDACIÓN ----------
     if total_casos >= total_asignar:
