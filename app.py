@@ -15,6 +15,7 @@ if st.button("🔄 Reiniciar"):
 
 archivo = st.file_uploader("Cargar archivo Excel", type=["xlsx"])
 
+
 def buscar_columna(encabezados, posibles):
     for p in posibles:
         for e in encabezados:
@@ -22,16 +23,20 @@ def buscar_columna(encabezados, posibles):
                 return encabezados.index(e)
     return None
 
+
 # ---------- CONVERTIR FECHA ----------
 def convertir_fecha(valor):
+
     if isinstance(valor, datetime):
         return valor
 
     try:
         texto = str(valor).split(",")[0].strip()
         return datetime.strptime(texto, "%d/%m/%Y")
+
     except:
         return datetime.max
+
 
 if archivo:
 
@@ -61,8 +66,10 @@ if archivo:
         caso = fila[col_caso]
         centro = str(fila[col_centro]).upper() if fila[col_centro] else ""
 
+        # 🔥 TODAS las solicitudes para gráfica
         datos_originales.append(list(fila))
 
+        # 🔥 Duplicados eliminados SOLO para distribución
         if not caso or caso in casos_vistos:
             continue
 
@@ -85,13 +92,22 @@ if archivo:
     c1.metric("Casos únicos", total_casos)
     c2.metric("Casos WODEN", len(casos_woden))
     c3.metric("Casos LOGYTECH", len(casos_logy))
-    c4.metric("Filas originales", total_rep_original)
+    c4.metric("Solicitudes totales", total_rep_original)
 
     # ---------- INPUTS ----------
     colA, colB = st.columns(2)
 
-    personas = colA.number_input("Número de líderes técnicos", min_value=1, step=1)
-    por_persona = colB.number_input("Casos por líder técnico", min_value=1, step=1)
+    personas = colA.number_input(
+        "Número de líderes técnicos",
+        min_value=1,
+        step=1
+    )
+
+    por_persona = colB.number_input(
+        "Casos por líder técnico",
+        min_value=1,
+        step=1
+    )
 
     total_asignar = personas * por_persona
 
@@ -107,71 +123,86 @@ if archivo:
         ]
     )
 
- 
-   # ---------- GRÁFICA INTERACTIVA ----------
-st.subheader("📈 Solicitudes de repuestos por fecha")
+    # ---------- GRÁFICA INTERACTIVA ----------
+    st.subheader("📈 Solicitudes de repuestos por fecha")
 
-fechas_validas = []
+    fechas_validas = []
 
-# USAR TODAS LAS FILAS ORIGINALES
-for fila in datos_originales:
+    # 🔥 USAR TODAS LAS SOLICITUDES
+    for fila in datos_originales:
 
-    fecha = convertir_fecha(fila[col_fecha])
+        fecha = convertir_fecha(fila[col_fecha])
 
-    if fecha != datetime.max:
-        fechas_validas.append(fecha.strftime("%d/%m/%Y"))
+        if fecha != datetime.max:
+            fechas_validas.append(fecha.strftime("%d/%m/%Y"))
 
-conteo_fechas = Counter(fechas_validas)
+    conteo_fechas = Counter(fechas_validas)
 
-fechas_ordenadas = sorted(
-    conteo_fechas.keys(),
-    key=lambda x: datetime.strptime(x, "%d/%m/%Y")
-)
+    fechas_ordenadas = sorted(
+        conteo_fechas.keys(),
+        key=lambda x: datetime.strptime(x, "%d/%m/%Y")
+    )
 
-cantidades = [conteo_fechas[f] for f in fechas_ordenadas]
+    cantidades = [conteo_fechas[f] for f in fechas_ordenadas]
 
-fig = px.line(
-    x=fechas_ordenadas,
-    y=cantidades,
-    markers=True,
-    labels={
-        "x": "Fecha de solicitud",
-        "y": "Cantidad de repuestos"
-    }
-)
+    fig = px.line(
+        x=fechas_ordenadas,
+        y=cantidades,
+        markers=True,
+        labels={
+            "x": "Fecha de solicitud",
+            "y": "Cantidad de solicitudes"
+        }
+    )
 
-fig.update_layout(
-    xaxis_title="Fecha de solicitud",
-    yaxis_title="Cantidad de repuestos",
-    hovermode="x unified"
-)
+    fig.update_traces(mode="lines+markers")
 
-st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(
+        xaxis_title="Fecha de solicitud",
+        yaxis_title="Cantidad de solicitudes",
+        hovermode="x unified"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
 
     # ---------- VALIDACIÓN ----------
     if total_casos >= total_asignar:
-        st.success(f"Datos suficientes. Sobrantes estimados: {total_casos - total_asignar}")
+
+        st.success(
+            f"Datos suficientes. "
+            f"Sobrantes estimados: {total_casos - total_asignar}"
+        )
+
     else:
         st.warning("Se asignarán todos los casos disponibles.")
 
     # ---------- GENERAR ----------
     if st.button("Generar distribución"):
 
-        # SELECCIÓN SEGÚN MODO
+        # ---------- SELECCIÓN SEGÚN MODO ----------
         if "Modo 1" in modo:
-            datos.sort(key=lambda x: int(x[col_caso]))
+
+            datos.sort(
+                key=lambda x: int(x[col_caso])
+            )
+
         else:
-            datos.sort(key=lambda x: convertir_fecha(x[col_fecha]))
+
+            datos.sort(
+                key=lambda x: convertir_fecha(x[col_fecha])
+            )
 
         # ---------- SEPARAR PRIORIDAD ----------
         prioridad = []
         normales = []
 
         for fila in datos:
+
             centro = str(fila[col_centro]).upper() if fila[col_centro] else ""
 
             if "WODEN" in centro or "LOGYTECH" in centro:
                 prioridad.append(fila)
+
             else:
                 normales.append(fila)
 
@@ -189,7 +220,10 @@ st.plotly_chart(fig, use_container_width=True)
 
             intentos = 0
 
-            while len(grupos[indice % personas]) >= por_persona and intentos < personas:
+            while (
+                len(grupos[indice % personas]) >= por_persona
+                and intentos < personas
+            ):
                 indice += 1
                 intentos += 1
 
@@ -201,7 +235,11 @@ st.plotly_chart(fig, use_container_width=True)
 
         # ---------- SOBRANTES ----------
         asignados_reales = [fila for grupo in grupos for fila in grupo]
-        sobrantes = [f for f in datos if f not in asignados_reales]
+
+        sobrantes = [
+            f for f in datos
+            if f not in asignados_reales
+        ]
 
         # ---------- ARCHIVO PRINCIPAL ----------
         wb_out = openpyxl.Workbook()
@@ -213,17 +251,22 @@ st.plotly_chart(fig, use_container_width=True)
             resto = []
 
             for fila in grupo:
+
                 centro = str(fila[col_centro]).upper() if fila[col_centro] else ""
 
                 if "WODEN" in centro or "LOGYTECH" in centro:
                     prioridad_local.append(fila)
+
                 else:
                     resto.append(fila)
 
             # ---------- ORGANIZACIÓN ----------
             if "Modo 1" in modo:
 
-                resto_ordenado = sorted(resto, key=lambda x: int(x[col_caso]))
+                resto_ordenado = sorted(
+                    resto,
+                    key=lambda x: int(x[col_caso])
+                )
 
                 mitad = len(resto_ordenado) // 2
 
@@ -263,8 +306,9 @@ st.plotly_chart(fig, use_container_width=True)
 
                 organizados = prioridad_local + resto_fecha
 
-            # ---------- HOJA ----------
+            # ---------- CREAR HOJA ----------
             ws_out = wb_out.create_sheet(f"Tec_lid{i+1}")
+
             ws_out.append(encabezados)
 
             for fila in organizados:
@@ -273,13 +317,16 @@ st.plotly_chart(fig, use_container_width=True)
         buffer1 = BytesIO()
         wb_out.save(buffer1)
 
-        # ---------- SOBRANTES ----------
+        # ---------- ARCHIVO SOBRANTES ----------
         if "Modo 1" in modo:
+
             sobrantes.sort(
                 key=lambda x: int(x[col_caso]),
                 reverse=True
             )
+
         else:
+
             sobrantes.sort(
                 key=lambda x: convertir_fecha(x[col_fecha]),
                 reverse=True
@@ -289,6 +336,7 @@ st.plotly_chart(fig, use_container_width=True)
         ws_rest = wb_rest.active
 
         ws_rest.title = "Repuestos no asignados"
+
         ws_rest.append(encabezados)
 
         for fila in sobrantes:
@@ -297,7 +345,7 @@ st.plotly_chart(fig, use_container_width=True)
         buffer2 = BytesIO()
         wb_rest.save(buffer2)
 
-        # ---------- GUARDAR ----------
+        # ---------- GUARDAR EN MEMORIA ----------
         st.session_state["dist"] = buffer1.getvalue()
         st.session_state["sobrantes"] = buffer2.getvalue()
 
