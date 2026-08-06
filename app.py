@@ -10,6 +10,7 @@ from collections import Counter
 st.set_page_config(page_title="Distribución de Repuestos", layout="wide")
 st.title("📦 Distribución de Repuestos soporte técnico")
 
+
 # ---------- BOTÓN REINICIAR ----------
 if st.button("🔄 Reiniciar"):
     st.session_state.clear()
