@@ -6,6 +6,7 @@ from datetime import datetime
 from collections import Counter
 
 
+
 # app soporte
 st.set_page_config(page_title="Distribución de Repuestos", layout="wide")
 st.title("📦 Distribución de Repuestos soporte técnico")
